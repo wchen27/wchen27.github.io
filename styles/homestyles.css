@@ -1,0 +1,1464 @@
+/* colors */
+:root {
+    --background-color: #181926;
+    --secondary-color: #b4befe;
+    --primary-color: #cdd6f4;
+    --accent-color: #bf9aca;
+    --indent-color: #1e2030;
+    --muted-color: #7f849c;
+    --terminal-border: rgba(180, 190, 254, 0.24);
+    --terminal-glow: rgba(191, 154, 202, 0.2);
+    --terminal-window-shadow: 0 18px 64px rgba(0, 0, 0, 0.28);
+    --terminal-window-focus-shadow:
+        0 18px 64px rgba(0, 0, 0, 0.28),
+        0 24px 90px var(--terminal-glow);
+
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-right: env(safe-area-inset-right, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+    --safe-left: env(safe-area-inset-left, 0px);
+}
+
+/* env() cannot be read from JS directly, and custom properties holding env()
+   are not reliably resolved to px by getComputedStyle. This zero-size probe
+   turns them into real padding values the layout maths can read. */
+.safe-area-probe {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 0;
+    height: 0;
+    visibility: hidden;
+    pointer-events: none;
+    padding: var(--safe-top) var(--safe-right) var(--safe-bottom)
+        var(--safe-left);
+}
+
+html {
+    scroll-behavior: smooth;
+    scrollbar-gutter: stable;
+    background-color: var(--background-color);
+}
+
+/* The desktop never scrolls (everything on it is fixed), so a reserved
+   gutter is just an empty strip down the right edge that fixed layers like
+   the VHS filter can't paint into. */
+html:has(.terminal-page) {
+    scrollbar-gutter: auto;
+}
+
+body {
+    margin: 0;
+    font-family: "Roboto Mono", monospace;
+    color: var(--primary-color);
+    background:
+        linear-gradient(rgba(180, 190, 254, 0.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(180, 190, 254, 0.035) 1px, transparent 1px),
+        var(--background-color);
+    background-size: 32px 32px;
+}
+
+body::before {
+    position: fixed;
+    inset: -6px 0 0;
+    z-index: 0;
+    pointer-events: none;
+    content: "";
+    background: repeating-linear-gradient(
+        to bottom,
+        rgba(205, 214, 244, 0.035),
+        rgba(205, 214, 244, 0.035) 1px,
+        transparent 1px,
+        transparent 5px
+    );
+    mix-blend-mode: screen;
+    animation: crt-drift 7s linear infinite;
+}
+
+/* Scrolling ASCII landscape drawn by LandscapeWallpaper. It sits under the
+   scanlines and replaces the grid while it is mounted. */
+.landscape-wallpaper {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    display: block;
+    width: 100vw;
+    height: 100vh;
+    pointer-events: none;
+}
+
+body:has(> .landscape-wallpaper) {
+    background: none;
+}
+
+/* "new landscape": the picture drops out and comes back as somewhere else.
+   The swap itself happens at the dark point, 170ms in. */
+.landscape-wallpaper.landscape-swapping {
+    animation: landscape-swap 440ms linear both;
+}
+
+@keyframes landscape-swap {
+    0% {
+        opacity: 1;
+        filter: none;
+    }
+    12% {
+        opacity: 0.55;
+        filter: brightness(1.6) saturate(0);
+    }
+    38%,
+    46% {
+        opacity: 0;
+    }
+    100% {
+        opacity: 1;
+        filter: none;
+    }
+}
+
+/* The scanline pattern repeats every 5px, so a 5px travel loops seamlessly. */
+@keyframes crt-drift {
+    from {
+        transform: translateY(0);
+    }
+    to {
+        transform: translateY(5px);
+    }
+}
+
+a {
+    color: inherit;
+    text-decoration: none;
+}
+
+.terminal-page {
+    position: relative;
+    z-index: 1;
+}
+
+.terminal-stage {
+    position: fixed;
+    inset: calc(3.25rem + var(--safe-top)) var(--safe-right)
+        calc(4.85rem + var(--safe-bottom)) var(--safe-left);
+    z-index: 5;
+    pointer-events: none;
+}
+
+.mobile-terminal-stage {
+    display: none;
+}
+
+@media screen {
+    html:has(.terminal-page),
+    body:has(.terminal-page) {
+        height: 100%;
+        overflow: hidden;
+        overscroll-behavior: none;
+    }
+}
+
+.terminal-window {
+    --window-opacity: 0.82;
+    --window-scale: 0.98;
+    position: absolute;
+    display: flex;
+    box-sizing: border-box;
+    max-width: none;
+    flex-direction: column;
+    overflow: hidden;
+    border: 1px solid var(--terminal-border);
+    border-radius: 8px;
+    background: rgba(30, 32, 48, 0.95);
+    box-shadow: var(--terminal-window-shadow);
+    cursor: grab;
+    isolation: isolate;
+    opacity: var(--window-opacity);
+    transform: scale(var(--window-scale));
+    transform-origin: center;
+    transition:
+        height 220ms ease,
+        border-color 180ms ease,
+        box-shadow 180ms ease,
+        opacity 180ms ease,
+        transform 180ms ease;
+    pointer-events: auto;
+}
+
+.terminal-window:active {
+    cursor: grabbing;
+}
+
+.focused-window {
+    --window-opacity: 1;
+    --window-scale: 1;
+    border-color: rgba(191, 154, 202, 0.72);
+    box-shadow: var(--terminal-window-focus-shadow);
+}
+
+.window-pop {
+    animation: window-pop 420ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+    animation-delay: var(--pop-delay, 0ms);
+}
+
+.terminal-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 2.45rem;
+    padding: 0 0.9rem;
+    border-bottom: 1px solid var(--terminal-border);
+    border-radius: 8px 8px 0 0;
+    background: rgba(24, 25, 38, 0.96);
+    user-select: none;
+}
+
+.terminal-bar span,
+.window-dot {
+    width: 0.68rem;
+    height: 0.68rem;
+    flex: 0 0 auto;
+    border: 0;
+    border-radius: 50%;
+    background: var(--accent-color);
+}
+
+.window-dot {
+    padding: 0;
+    cursor: pointer;
+    transition: background 140ms ease;
+}
+
+.window-minimize {
+    background: var(--secondary-color);
+}
+
+.window-maximize {
+    background: var(--primary-color);
+}
+
+.window-close:hover {
+    background: #f38ba8;
+}
+
+.window-minimize:hover {
+    background: #f9e2af;
+}
+
+.window-maximize:hover {
+    background: #a6e3a1;
+}
+
+.window-dot:focus-visible {
+    outline: 2px solid var(--secondary-color);
+    outline-offset: 3px;
+}
+
+.terminal-window:focus-visible {
+    outline: 2px solid var(--accent-color);
+    outline-offset: 2px;
+}
+
+.minimized-window {
+    display: none;
+}
+
+.maximized-window,
+.maximized-window .terminal-bar {
+    border-radius: 0;
+}
+
+.genie-out,
+.genie-in,
+.window-closing {
+    transition: none;
+    pointer-events: none;
+}
+
+.genie-out {
+    animation: genie-out 260ms cubic-bezier(0.4, 0, 0.9, 0.4) forwards;
+}
+
+.genie-in {
+    animation: genie-in 260ms cubic-bezier(0.1, 0.7, 0.3, 1) both;
+}
+
+.window-closing {
+    animation: window-close 190ms cubic-bezier(0.4, 0, 1, 0.6) forwards;
+}
+
+/* The resting end of both genies is the window's own resting state, which is
+   smaller and dimmer when it isn't focused - ending on scale(1) and full
+   opacity made every unfocused window snap down as the animation let go. */
+@keyframes genie-out {
+    from {
+        transform: translate(0, 0) scale(var(--window-scale));
+        opacity: var(--window-opacity);
+    }
+    to {
+        transform: translate(var(--genie-x), var(--genie-y))
+            scale(var(--genie-sx), var(--genie-sy));
+        opacity: 0;
+    }
+}
+
+@keyframes genie-in {
+    from {
+        transform: translate(var(--genie-x), var(--genie-y))
+            scale(var(--genie-sx), var(--genie-sy));
+        opacity: 0;
+    }
+    to {
+        transform: translate(0, 0) scale(var(--window-scale));
+        opacity: var(--window-opacity);
+    }
+}
+
+@keyframes window-close {
+    to {
+        opacity: 0;
+        transform: scale(0.94) translateY(0.4rem);
+    }
+}
+
+/* Only while the layout is being rearranged for the user - a permanent
+   transition on left/top makes dragging lag behind the pointer. */
+.layout-shifting {
+    transition:
+        left 300ms cubic-bezier(0.22, 1, 0.36, 1),
+        top 300ms cubic-bezier(0.22, 1, 0.36, 1),
+        width 300ms cubic-bezier(0.22, 1, 0.36, 1),
+        height 300ms cubic-bezier(0.22, 1, 0.36, 1),
+        border-color 180ms ease,
+        box-shadow 180ms ease,
+        opacity 180ms ease,
+        transform 180ms ease;
+}
+
+/* The base rule eases height over 220ms, which makes a window being resized
+   visibly trail the pointer. Drop every transition while interacting. */
+.terminal-window.interacting {
+    transition: none;
+    will-change: left, top, width, height;
+}
+
+.resize-handle {
+    position: absolute;
+    z-index: 2;
+    touch-action: none;
+}
+
+.resize-e {
+    top: 0;
+    right: 0;
+    width: 7px;
+    height: 100%;
+    cursor: ew-resize;
+}
+
+.resize-s {
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 7px;
+    cursor: ns-resize;
+}
+
+.resize-se {
+    right: 0;
+    bottom: 0;
+    width: 16px;
+    height: 16px;
+    cursor: nwse-resize;
+}
+
+.resize-se::after {
+    position: absolute;
+    right: 3px;
+    bottom: 3px;
+    width: 9px;
+    height: 9px;
+    content: "";
+    opacity: 0;
+    background:
+        linear-gradient(
+            135deg,
+            transparent 0 45%,
+            rgba(180, 190, 254, 0.55) 45% 55%,
+            transparent 55%
+        ),
+        linear-gradient(
+            135deg,
+            transparent 0 70%,
+            rgba(180, 190, 254, 0.55) 70% 80%,
+            transparent 80%
+        );
+    transition: opacity 160ms ease;
+}
+
+.focused-window .resize-se::after {
+    opacity: 1;
+}
+
+.terminal-bar span:nth-child(2) {
+    background: var(--secondary-color);
+}
+
+.terminal-bar span:nth-child(3) {
+    background: var(--primary-color);
+}
+
+.terminal-bar p {
+    margin: 0 0 0 0.45rem;
+    overflow: hidden;
+    color: var(--muted-color);
+    font-size: 0.82rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.terminal-body {
+    flex: 1;
+    overflow: auto;
+    padding: 1rem;
+    cursor: grab;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(180, 190, 254, 0.42) transparent;
+}
+
+.terminal-window.settling .terminal-body {
+    overflow: hidden;
+}
+
+.prompt-line {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    min-height: 1.45rem;
+    margin-bottom: 0.9rem;
+    color: var(--primary-color);
+    font-size: 0.86rem;
+    line-height: 1.45;
+}
+
+.prompt {
+    color: var(--accent-color);
+}
+
+.window-output {
+    animation: output-panel 220ms ease-out both;
+}
+
+/* The intro already revealed this content. Its destination must be fully
+   settled before the atomic handoff instead of replaying the panel entrance. */
+.static-output .window-output,
+.static-output .mobile-window-output {
+    animation: none;
+}
+
+.window-output p {
+    margin: 0.55rem 0 0;
+    color: var(--primary-color);
+    font-size: 0.9rem;
+    line-height: 1.55;
+    overflow-wrap: anywhere;
+}
+
+.eyebrow,
+.tree-root,
+.meta,
+.branch {
+    color: var(--accent-color) !important;
+    font-size: 0.78rem !important;
+}
+
+h1,
+h2 {
+    margin: 0;
+    color: var(--secondary-color);
+    letter-spacing: 0;
+}
+
+h1 {
+    color: var(--accent-color);
+    font-size: clamp(2rem, 4vw, 3.8rem);
+    line-height: 1;
+}
+
+h2 {
+    font-size: 1rem;
+    line-height: 1.35;
+}
+
+.profile-layout {
+    display: grid;
+    grid-template-columns: clamp(5.5rem, 18%, 8rem) minmax(0, 1fr);
+    gap: 1rem;
+    align-items: center;
+}
+
+.profile-picture {
+    width: min(100%, 8rem);
+    /* the img width/height attributes reserve space before decode, but their
+       presentational hint would otherwise set a literal pixel height here */
+    height: auto;
+    aspect-ratio: 1;
+    border: 1px solid var(--terminal-border);
+    border-radius: 8px;
+    object-fit: cover;
+    box-shadow: 0.5rem 0.5rem 0 rgba(191, 154, 202, 0.16);
+}
+
+.terminal-links,
+.skill-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.55rem;
+    margin-top: 1rem;
+}
+
+.terminal-links a,
+.skill-grid span {
+    border: 1px solid var(--terminal-border);
+    border-radius: 6px;
+    padding: 0.45rem 0.62rem;
+    background: rgba(24, 25, 38, 0.78);
+    color: var(--secondary-color);
+    font-size: 0.8rem;
+    cursor: pointer;
+}
+
+.terminal-links a::before {
+    content: "./";
+    color: var(--accent-color);
+}
+
+.terminal-links a:hover {
+    color: var(--accent-color);
+    border-color: rgba(191, 154, 202, 0.6);
+}
+
+.project-grid,
+.git-log {
+    display: grid;
+    gap: 0.65rem;
+    margin-top: 0.75rem;
+}
+
+.project-grid {
+    grid-template-columns: 1fr;
+}
+
+.project-grid article,
+.git-log article {
+    border-left: 3px solid rgba(191, 154, 202, 0.7);
+    border-radius: 0 6px 6px 0;
+    padding: 0.65rem 0.75rem;
+    background: rgba(24, 25, 38, 0.66);
+}
+
+.project-grid p,
+.git-log p {
+    font-size: 0.82rem;
+}
+
+.commit-hash {
+    color: var(--secondary-color);
+}
+
+.branch {
+    margin: 0 0.45rem;
+}
+
+.commit-body {
+    margin-left: 1.15rem !important;
+    color: var(--muted-color) !important;
+}
+
+.neofetch {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 1.15rem;
+    align-items: start;
+    margin-top: 0.4rem;
+}
+
+.neofetch-art {
+    margin: 0;
+    color: var(--accent-color);
+    font-family: inherit;
+    font-size: 0.72rem;
+    line-height: 1.15;
+    white-space: pre;
+}
+
+.neofetch-info p {
+    margin: 0;
+    font-size: 0.8rem;
+    line-height: 1.5;
+}
+
+/* .branch is styled for the git log; neofetch prints user@host as one word */
+.neofetch-title .branch {
+    margin: 0;
+    font-size: inherit !important;
+}
+
+.neofetch-rule {
+    color: var(--muted-color);
+}
+
+.neofetch-key {
+    color: var(--secondary-color);
+}
+
+.neofetch-palette {
+    display: flex;
+    gap: 0.22rem;
+    margin-top: 0.65rem;
+}
+
+.neofetch-palette span {
+    width: 1.1rem;
+    height: 0.7rem;
+    border-radius: 2px;
+}
+
+.copy-email,
+.compose-toggle,
+.compose-send {
+    border: 1px solid var(--terminal-border);
+    border-radius: 6px;
+    padding: 0.2rem 0.45rem;
+    background: rgba(24, 25, 38, 0.78);
+    color: var(--secondary-color);
+    font: inherit;
+    font-size: 0.78rem;
+    cursor: pointer;
+}
+
+.copy-email:hover,
+.compose-toggle:hover,
+.compose-send:hover,
+.copy-email:focus-visible,
+.compose-toggle:focus-visible,
+.compose-send:focus-visible {
+    border-color: rgba(191, 154, 202, 0.6);
+    color: var(--accent-color);
+}
+
+.copy-state {
+    color: var(--muted-color);
+    font-size: 0.68rem;
+}
+
+.copy-email:hover .copy-state {
+    color: var(--accent-color);
+}
+
+.compose-toggle,
+.compose-send {
+    padding: 0.45rem 0.62rem;
+    font-size: 0.8rem;
+}
+
+.compose-form {
+    display: grid;
+    gap: 0.55rem;
+    margin-top: 0.85rem;
+    border-top: 1px dashed rgba(180, 190, 254, 0.24);
+    padding-top: 0.85rem;
+}
+
+.compose-form label {
+    display: grid;
+    gap: 0.25rem;
+}
+
+.compose-form label span {
+    color: var(--accent-color);
+    font-size: 0.72rem;
+}
+
+.compose-form input,
+.compose-form textarea {
+    width: 100%;
+    box-sizing: border-box;
+    border: 1px solid var(--terminal-border);
+    border-radius: 6px;
+    padding: 0.4rem 0.5rem;
+    background: rgba(24, 25, 38, 0.78);
+    color: var(--primary-color);
+    font: inherit;
+    font-size: 0.8rem;
+    resize: vertical;
+}
+
+/* iOS Safari force-zooms the viewport when a focused field is under 16px,
+   and never zooms back out. Touch devices get exactly 16px. */
+@media (pointer: coarse) {
+    .compose-form input,
+    .compose-form textarea {
+        font-size: 16px;
+    }
+}
+
+.compose-form input:focus,
+.compose-form textarea:focus {
+    border-color: rgba(191, 154, 202, 0.72);
+    outline: none;
+}
+
+.compose-send {
+    justify-self: start;
+}
+
+.resume-doc {
+    display: grid;
+    gap: 1.15rem;
+    margin-top: 0.5rem;
+}
+
+.resume-head {
+    border-left: 3px solid rgba(191, 154, 202, 0.7);
+    border-radius: 0 6px 6px 0;
+    padding: 0.6rem 0.8rem;
+    background: rgba(24, 25, 38, 0.66);
+}
+
+.resume-doc p {
+    margin: 0;
+}
+
+.resume-name {
+    color: var(--accent-color);
+    font-size: 1.15rem !important;
+    line-height: 1.2;
+}
+
+.resume-role {
+    margin-top: 0.3rem !important;
+    color: var(--primary-color);
+    font-size: 0.8rem !important;
+}
+
+.resume-contact {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-top: 0.5rem !important;
+    color: var(--muted-color);
+    font-size: 0.74rem !important;
+}
+
+.resume-contact a {
+    color: var(--secondary-color);
+}
+
+.resume-contact a:hover {
+    color: var(--accent-color);
+    text-decoration: underline;
+}
+
+.resume-section {
+    display: grid;
+    gap: 0.55rem;
+}
+
+/* "## section ------------" - a shell-style heading with a rule running out
+   to the edge of the window. */
+.resume-heading {
+    display: flex;
+    gap: 0.6rem;
+    align-items: center;
+    margin: 0;
+    color: var(--accent-color);
+    font-size: 0.78rem;
+    text-transform: lowercase;
+    letter-spacing: 0.08em;
+}
+
+.resume-heading span::before {
+    content: "## ";
+    color: var(--secondary-color);
+}
+
+.resume-heading::after {
+    flex: 1;
+    height: 1px;
+    content: "";
+    background: repeating-linear-gradient(
+        to right,
+        rgba(180, 190, 254, 0.32) 0 4px,
+        transparent 4px 8px
+    );
+}
+
+.resume-entry {
+    display: grid;
+    gap: 0.15rem;
+}
+
+.resume-line {
+    display: flex;
+    gap: 0.5rem;
+    align-items: baseline;
+    font-size: 0.82rem !important;
+}
+
+.resume-title {
+    color: var(--primary-color);
+}
+
+/* dotted leader, the way a plaintext resume lines up its columns */
+.resume-leader {
+    min-width: 1.5rem;
+    flex: 1 1 auto;
+    align-self: center;
+    height: 1px;
+    background: repeating-linear-gradient(
+        to right,
+        rgba(127, 132, 156, 0.55) 0 2px,
+        transparent 2px 6px
+    );
+}
+
+.resume-org {
+    flex: 0 0 auto;
+    color: var(--secondary-color);
+    font-size: 0.78rem;
+    text-align: right;
+}
+
+.resume-detail {
+    color: var(--muted-color) !important;
+    font-size: 0.78rem !important;
+    line-height: 1.5;
+}
+
+.resume-actions {
+    margin-top: 0.25rem;
+}
+
+.print-sheet {
+    display: none;
+}
+
+.contact-output {
+    display: grid;
+    gap: 1rem;
+}
+
+.ping-lines {
+    display: grid;
+    gap: 0.1rem;
+}
+
+.ping-lines p,
+.mail-command p {
+    margin: 0;
+    font-size: 0.82rem;
+}
+
+.mail-command {
+    border-top: 1px dashed rgba(180, 190, 254, 0.24);
+    padding-top: 0.75rem;
+}
+
+.desktop-taskbar {
+    position: fixed;
+    right: 0;
+    bottom: calc(1.72rem + var(--safe-bottom));
+    left: 0;
+    z-index: 999;
+    display: flex;
+    gap: 0.45rem;
+    align-items: center;
+    justify-content: center;
+    min-height: 2.9rem;
+    padding: 0.45rem 1rem;
+    box-sizing: border-box;
+    border-top: 1px solid rgba(180, 190, 254, 0.16);
+    background: rgba(24, 25, 38, 0.9);
+    backdrop-filter: blur(12px);
+    animation: taskbar-enter 560ms cubic-bezier(0.22, 1, 0.36, 1) 160ms both;
+}
+
+.desktop-taskbar button {
+    position: relative;
+    min-width: 5.2rem;
+    border: 1px solid var(--terminal-border);
+    border-radius: 6px;
+    padding: 0.52rem 0.7rem;
+    background: rgba(30, 32, 48, 0.96);
+    color: var(--primary-color);
+    font: inherit;
+    font-size: 0.78rem;
+    cursor: pointer;
+}
+
+.desktop-taskbar button:hover,
+.desktop-taskbar button:focus-visible,
+.desktop-taskbar .active-taskbar-item {
+    border-color: rgba(191, 154, 202, 0.72);
+    color: var(--secondary-color);
+}
+
+/* The underline is a transition rather than a keyframe animation, so clicking
+   a button whose line is already drawn (by hovering it) doesn't replay it. */
+.desktop-taskbar button::after {
+    position: absolute;
+    right: 6px;
+    bottom: -1px;
+    left: 6px;
+    height: 2px;
+    border-radius: 2px;
+    content: "";
+    background: var(--accent-color);
+    transform: scaleX(0);
+    transition: transform 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.desktop-taskbar button:hover::after,
+.desktop-taskbar button:focus-visible::after,
+.desktop-taskbar .active-taskbar-item::after {
+    transform: scaleX(1);
+}
+
+.desktop-taskbar .open-taskbar-item::before,
+.desktop-taskbar .minimized-taskbar-item::before {
+    display: inline-block;
+    width: 0.35rem;
+    height: 0.35rem;
+    margin-right: 0.4rem;
+    border-radius: 50%;
+    content: "";
+    vertical-align: middle;
+    background: var(--secondary-color);
+}
+
+.desktop-taskbar .minimized-taskbar-item {
+    color: var(--muted-color);
+}
+
+.desktop-taskbar .minimized-taskbar-item::before {
+    background: var(--muted-color);
+}
+
+/* Opening: the label flickers on like a warming tube while the dot grows in,
+   widening the button. Restoring a minimized window plays it too. */
+.desktop-taskbar .open-taskbar-item::before {
+    animation: taskbar-dot-in 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.desktop-taskbar .open-taskbar-item .taskbar-label {
+    animation:
+        taskbar-crt-on 600ms steps(1, end) both,
+        taskbar-crt-glow 600ms ease-out both;
+}
+
+/* Closing: only the dot shrinks out, narrowing the button back down. It is a
+   touch shorter than the window's 190ms close so it has finished by the time
+   the window is removed and the dot goes with it. */
+.desktop-taskbar .closing-taskbar-item::before {
+    animation: taskbar-dot-out 170ms cubic-bezier(0.4, 0, 1, 0.6) forwards;
+}
+
+.desktop-taskbar .closing-taskbar-item::after {
+    transform: scaleX(0);
+}
+
+/* Taken out of flow so the five window buttons stay centred in the bar
+   rather than being pushed left by this one. */
+.desktop-taskbar .taskbar-palette {
+    position: absolute;
+    right: 1rem;
+    min-width: 0;
+    color: var(--muted-color);
+    letter-spacing: 0.04em;
+}
+
+/* CRT tube look, drawn by VhsOverlay: a vignette and a slow hum bar over the
+   scanlines, with text left untouched. Desktop only: on phones the window
+   fills the screen, so the vignette would darken its edges. */
+.vhs-overlay {
+    display: none;
+}
+
+@media screen and (min-width: 761px) {
+    .vhs-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 1600;
+        display: block;
+        overflow: hidden;
+        pointer-events: none;
+        background: radial-gradient(
+            ellipse at center,
+            transparent 58%,
+            rgba(0, 0, 0, 0.3) 100%
+        );
+    }
+}
+
+/* mains hum: a faint brighter band rolling slowly up the picture */
+.vhs-hum {
+    position: absolute;
+    right: 0;
+    left: 0;
+    height: 22vh;
+    background: linear-gradient(
+        to bottom,
+        transparent,
+        rgba(205, 214, 244, 0.025) 50%,
+        transparent
+    );
+    animation: vhs-hum 14s linear infinite;
+}
+
+@keyframes vhs-hum {
+    from {
+        transform: translateY(110vh);
+    }
+    to {
+        transform: translateY(-25vh);
+    }
+}
+
+.bee-stripe {
+    color: #f9e2af;
+}
+
+.bee-body {
+    color: var(--muted-color);
+}
+
+.bee-wing {
+    color: var(--secondary-color);
+}
+
+@media (max-width: 940px) {
+    .desktop-taskbar .taskbar-palette {
+        display: none;
+    }
+}
+
+@keyframes output-panel {
+    from {
+        opacity: 0;
+        transform: translateY(0.4rem);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes window-pop {
+    0% {
+        opacity: 0;
+        transform: translateY(1.25rem) scale(0.9);
+    }
+    60% {
+        opacity: 1;
+        transform: translateY(-0.15rem) scale(1.015);
+    }
+    100% {
+        opacity: var(--window-opacity);
+        transform: scale(var(--window-scale));
+    }
+}
+
+@keyframes taskbar-dot-in {
+    0% {
+        width: 0;
+        margin-right: 0;
+        transform: scale(0);
+    }
+    50% {
+        width: 0.35rem;
+        margin-right: 0.4rem;
+        transform: scale(1.5);
+        box-shadow: 0 0 8px 2px rgba(180, 190, 254, 0.6);
+    }
+    100% {
+        width: 0.35rem;
+        margin-right: 0.4rem;
+        transform: scale(1);
+        box-shadow: 0 0 0 0 rgba(180, 190, 254, 0);
+    }
+}
+
+@keyframes taskbar-dot-out {
+    to {
+        width: 0;
+        margin-right: 0;
+        opacity: 0;
+        transform: scale(0);
+    }
+}
+
+@keyframes taskbar-crt-on {
+    0% {
+        opacity: 0.15;
+    }
+    12% {
+        opacity: 1;
+    }
+    20% {
+        opacity: 0.3;
+    }
+    30% {
+        opacity: 1;
+    }
+    38% {
+        opacity: 0.6;
+    }
+    46%,
+    100% {
+        opacity: 1;
+    }
+}
+
+@keyframes taskbar-crt-glow {
+    0% {
+        text-shadow: 0 0 0 transparent;
+    }
+    30% {
+        text-shadow: 0 0 8px rgba(180, 190, 254, 0.9);
+    }
+    100% {
+        text-shadow: 0 0 0 transparent;
+    }
+}
+
+@keyframes taskbar-enter {
+    from {
+        opacity: 0;
+        transform: translateY(100%);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@media (max-width: 620px) {
+    .resume-line {
+        flex-wrap: wrap;
+    }
+
+    .resume-leader {
+        display: none;
+    }
+
+    .resume-org {
+        text-align: left;
+    }
+}
+
+@media (max-width: 760px) {
+    .desktop-terminal-stage {
+        display: none;
+    }
+
+    .desktop-taskbar {
+        display: none;
+    }
+
+    .mobile-terminal-stage {
+        position: fixed;
+        inset: calc(3.65rem + var(--safe-top)) calc(0.75rem + var(--safe-right))
+            calc(2.55rem + var(--safe-bottom)) calc(0.75rem + var(--safe-left));
+        z-index: 5;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: stretch;
+        pointer-events: auto;
+        touch-action: pan-y;
+    }
+
+    .mobile-terminal-window {
+        flex: 0 1 auto;
+        touch-action: pan-y;
+        position: relative;
+        left: auto !important;
+        top: auto !important;
+        width: 100% !important;
+        max-height: calc(100dvh - 7rem - var(--safe-top) - var(--safe-bottom));
+        overflow: hidden;
+        cursor: default;
+        opacity: 1;
+        transform: none;
+        transition:
+            height 280ms cubic-bezier(0.22, 1, 0.36, 1),
+            border-color 180ms ease,
+            box-shadow 180ms ease,
+            opacity 180ms ease,
+            transform 180ms ease;
+        pointer-events: auto;
+    }
+
+    .mobile-terminal-window .terminal-body {
+        flex: 0 1 auto;
+        min-height: 0;
+        overscroll-behavior-y: contain;
+        overflow: auto;
+        max-height: calc(
+            100dvh - 9.5rem - var(--safe-top) - var(--safe-bottom)
+        );
+        cursor: default;
+        scrollbar-width: thin;
+        scrollbar-color: rgba(180, 190, 254, 0.42) transparent;
+    }
+
+    .mobile-window-output {
+        animation: mobile-output-panel 260ms ease-out both;
+    }
+
+    .mobile-window-output.slide-from-right {
+        animation: slide-from-right 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    }
+
+    .mobile-window-output.slide-from-left {
+        animation: slide-from-left 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    }
+
+    .mobile-swipe-hint {
+        position: absolute;
+        bottom: 0.65rem;
+        left: 0;
+        right: 0;
+        margin: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 9px;
+        color: var(--muted-color);
+        font-size: 10.5px;
+        letter-spacing: 0.16em;
+        pointer-events: none;
+        transition: opacity 450ms ease, transform 450ms ease;
+    }
+
+    .mobile-swipe-hint span {
+        color: var(--accent-color);
+        font-size: 15px;
+    }
+
+    .mobile-swipe-hint.gone {
+        opacity: 0;
+        transform: translateY(-5px);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .mobile-swipe-hint {
+        transition: none;
+    }
+}
+
+@keyframes slide-from-right {
+    from {
+        opacity: 0;
+        transform: translateX(1.6rem);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+@keyframes slide-from-left {
+    from {
+        opacity: 0;
+        transform: translateX(-1.6rem);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+@media (max-width: 560px) {
+    .mobile-terminal-stage {
+        inset: calc(3.55rem + var(--safe-top)) calc(0.65rem + var(--safe-right))
+            calc(2.45rem + var(--safe-bottom)) calc(0.65rem + var(--safe-left));
+    }
+
+    .profile-layout,
+    .neofetch {
+        grid-template-columns: 1fr;
+    }
+
+    .profile-picture {
+        width: 5.5rem;
+    }
+
+    .terminal-bar p,
+    .prompt-line,
+    .window-output p {
+        font-size: 0.76rem;
+    }
+}
+
+@keyframes mobile-output-panel {
+    from {
+        opacity: 0;
+        transform: translateY(0.55rem) scale(0.99);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    html {
+        scroll-behavior: auto;
+    }
+
+    body::before,
+    .terminal-window,
+    .window-pop,
+    .window-output,
+    .mobile-window-output,
+    .mobile-window-output.slide-from-right,
+    .mobile-window-output.slide-from-left,
+    .genie-out,
+    .genie-in,
+    .window-closing,
+    .desktop-taskbar,
+    .desktop-taskbar button,
+    .desktop-taskbar button::before,
+    .desktop-taskbar button::after,
+    .desktop-taskbar .taskbar-label,
+    .cursor {
+        animation: none !important;
+        transition: none !important;
+    }
+
+    .vhs-hum {
+        display: none;
+    }
+}
+
+/* The windows only render content while they are open, so printing renders a
+   dedicated sheet built from the same data instead. */
+@media print {
+    html,
+    body {
+        background: #fff;
+        color: #111;
+    }
+
+    body::before,
+    .terminal-page > .terminal-stage,
+    .mobile-terminal-stage,
+    .desktop-taskbar,
+    .section,
+    header,
+    footer {
+        display: none !important;
+    }
+
+    .print-sheet {
+        display: block;
+        max-width: 42rem;
+        margin: 0 auto;
+        padding: 0;
+        color: #111;
+        font-family: "Helvetica Neue", Arial, sans-serif;
+        font-size: 10.5pt;
+        line-height: 1.45;
+    }
+
+    .print-sheet h1 {
+        margin: 0 0 0.15rem;
+        color: #111;
+        font-size: 20pt;
+        letter-spacing: 0;
+    }
+
+    .print-sheet h2 {
+        margin: 1.1rem 0 0.35rem;
+        border-bottom: 1px solid #bbb;
+        padding-bottom: 0.15rem;
+        color: #111;
+        font-size: 11pt;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+    }
+
+    .print-sheet h3 {
+        margin: 0.55rem 0 0.1rem;
+        font-size: 10.5pt;
+    }
+
+    .print-sheet p {
+        margin: 0 0 0.3rem;
+        color: #111;
+    }
+
+    .print-tagline {
+        font-size: 11pt;
+    }
+
+    .print-contact,
+    .print-meta {
+        color: #555 !important;
+        font-size: 9pt !important;
+    }
+
+    .print-entry {
+        margin-bottom: 0.5rem;
+        page-break-inside: avoid;
+    }
+}
+
+/* inline prose link, e.g. the janelia writeup in about.md */
+.inline-link {
+    color: var(--secondary-color);
+    text-decoration: none;
+    border-bottom: 1px dashed rgba(180, 190, 254, 0.45);
+    white-space: nowrap;
+    transition:
+        color 0.15s ease,
+        border-color 0.15s ease;
+}
+.inline-link::before {
+    content: "→ ";
+    color: var(--accent-color);
+}
+.inline-link:hover,
+.inline-link:focus-visible {
+    color: var(--accent-color);
+    border-bottom-color: var(--accent-color);
+}
+.project-grid h2 a {
+    color: inherit;
+    text-decoration: none;
+    border-bottom: 1px solid rgba(191, 154, 202, 0.45);
+}
+.project-grid h2 a:hover {
+    color: var(--accent-color);
+    border-bottom-color: var(--accent-color);
+}
+
+/* leaving for another route without a taskbar to minimize into */
+.terminal-page.departing {
+    animation: depart-fade 200ms ease forwards;
+    pointer-events: none;
+}
+@keyframes depart-fade {
+    to {
+        opacity: 0;
+        transform: scale(0.99);
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .terminal-page.departing {
+        animation: none;
+        opacity: 0;
+    }
+}

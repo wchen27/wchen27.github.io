@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<link rel="icon" href="/favicon-32x32.png" />
+		<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+		<link rel="preload" as="image" href="/images/profile2-sm.jpg" />
+		<!-- In the document head, not svelte:head. Injected at navigation time it
+		     loads async, so returning to the desktop painted an unstyled profile
+		     image at natural size and the window resized around it. -->
+		<link rel="stylesheet" href="/styles/homestyles.css" />
+		<meta
+			name="viewport"
+			content="width=device-width, initial-scale=1, viewport-fit=cover"
+		/>
+
+		<meta name="theme-color" content="#181926" />
+
+
+		<script type="application/ld+json">
+			{
+				"@context": "https://schema.org",
+				"@type": "Person",
+				"name": "Wilson Chen",
+				"url": "https://www.wilsonchen.ca/",
+				"image": "https://www.wilsonchen.ca/images/profile2.jpg",
+				"jobTitle": "Data Science Specialist",
+				"description": "Data Science Specialist building research software, ML systems, and data workflows.",
+				"alumniOf": {
+					"@type": "CollegeOrUniversity",
+					"name": "University of Toronto"
+				},
+				"sameAs": [
+					"https://www.github.com/wchen27",
+					"https://www.linkedin.com/in/qi-wei-chen-4357a8259/"
+				]
+			}
+		</script>
+
+		
+		<link rel="modulepreload" href="/_app/immutable/entry/start.DcDeYhoV.js">
+		<link rel="modulepreload" href="/_app/immutable/chunks/entry.d5I6n_H1.js">
+		<link rel="modulepreload" href="/_app/immutable/chunks/index-client.8mo1o0-m.js">
+		<link rel="modulepreload" href="/_app/immutable/entry/app.D9Lb6gTk.js">
+		<link rel="modulepreload" href="/_app/immutable/chunks/disclose-version.Ctsj53eP.js">
+		<link rel="modulepreload" href="/_app/immutable/chunks/this.Dbrrr3XD.js">
+		<link rel="modulepreload" href="/_app/immutable/chunks/props.DyGwIKLB.js">
+	</head>
+	<body data-sveltekit-preload-data="hover">
+		<div>
+			<script>
+				{
+					__sveltekit_qv3c0s = {
+						base: ""
+					};
+
+					const element = document.currentScript.parentElement;
+
+					Promise.all([
+						import("/_app/immutable/entry/start.DcDeYhoV.js"),
+						import("/_app/immutable/entry/app.D9Lb6gTk.js")
+					]).then(([kit, app]) => {
+						kit.start(app, element);
+					});
+				}
+			</script>
+		</div>
+	</body>
+</html>
