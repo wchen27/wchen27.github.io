@@ -160,6 +160,22 @@ a {
 .terminal-window {
     --window-opacity: 0.82;
     --window-scale: 0.98;
+    /* Lit by the wallpaper's moon: the page sets these from where it hangs
+       (see moonShadow). Until it rises, the shadow simply falls downward. */
+    --shadow-x: 0px;
+    --shadow-y: 18px;
+    --shadow-blur: 64px;
+    --rim-x: 0px;
+    --rim-y: 0px;
+    --terminal-window-shadow:
+        var(--shadow-x) var(--shadow-y) var(--shadow-blur) rgba(0, 0, 0, 0.4),
+        inset var(--rim-x) var(--rim-y) 0 rgba(180, 190, 254, 0.14);
+    /* A focused window is raised, so it stands further off its shadow. */
+    --terminal-window-focus-shadow:
+        calc(var(--shadow-x) * 1.4) calc(var(--shadow-y) * 1.4)
+            calc(var(--shadow-blur) * 1.2) rgba(0, 0, 0, 0.45),
+        0 24px 90px var(--terminal-glow),
+        inset var(--rim-x) var(--rim-y) 0 rgba(180, 190, 254, 0.22);
     position: absolute;
     display: flex;
     box-sizing: border-box;
